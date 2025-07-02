@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { FiMail, FiLock, FiEye, FiEyeOff, FiUser, FiShield, FiSmartphone, FiCheckCircle, FiAlertCircle, FiInfo } from 'react-icons/fi';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -21,6 +21,18 @@ export default function LoginPage() {
   const [showSuccessMessage, setShowSuccessMessage] = useState('');
   
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Check for email verification success
+  useEffect(() => {
+    const verified = searchParams.get('verified');
+    if (verified === 'true') {
+      setShowSuccessMessage('E-posta adresiniz başarıyla doğrulandı! Artık giriş yapabilirsiniz.');
+      setTimeout(() => {
+        setShowSuccessMessage('');
+      }, 5000);
+    }
+  }, [searchParams]);
 
   // Check for biometric availability
   useEffect(() => {

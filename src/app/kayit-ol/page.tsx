@@ -78,10 +78,12 @@ export default function RegisterPage() {
         }),
       });
 
+      const data = await response.json();
+
       if (response.ok) {
-        router.push('/giris?message=registration-success');
+        // E-posta doğrulama sayfasına yönlendir
+        router.push(`/email-dogrulama?email=${encodeURIComponent(formData.email)}`);
       } else {
-        const data = await response.json();
         setError(data.message || 'Kayıt oluşturulurken bir hata oluştu');
       }
     } catch (error) {

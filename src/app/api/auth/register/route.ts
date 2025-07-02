@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import clientPromise from '@/lib/mongodb';
+import { generateVerificationCode, sendVerificationEmail } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,6 +38,10 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // Generate verification code
+    const verificationCode = generateVerificationCode();
+    const verificationCodeExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 dakika
+
     // Create user
     const user = {
       name: `${firstName} ${lastName}`,
@@ -49,6 +54,9 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
       updatedAt: new Date(),
       emailVerified: null,
+      verificationCode,
+      verificationCodeExpiry,
+      lastVerificationSent: new Date(),
       role: 'user',
       orders: [],
       favorites: [],
@@ -58,16 +66,52 @@ export async function POST(request: NextRequest) {
     const result = await db.collection('users').insertOne(user);
 
     if (result.insertedId) {
-      // Remove password from response
-      const { password: _, ...userWithoutPassword } = user;
-      
-      return NextResponse.json(
-        { 
-          message: 'Hesap başarıyla oluşturuldu',
-          user: { ...userWithoutPassword, _id: result.insertedId }
-        },
-        { status: 201 }
-      );
+      // Send verification email
+      try {
+        const emailResult = await sendVerificationEmail(email, verificationCode, `${firstName} ${lastName}`);
+        
+        if (emailResult.success) {
+          // Remove password and verification info from response
+          const { password: _, verificationCode: __, verificationCodeExpiry: ___, ...userWithoutSensitiveData } = user;
+          
+          return NextResponse.json(
+            { 
+              message: 'Hesap başarıyla oluşturuldu. E-posta adresinize doğrulama kodu gönderildi.',
+              user: { ...userWithoutSensitiveData, _id: result.insertedId },
+              emailSent: true
+            },
+            { status: 201 }
+          );
+        } else {
+          // Email gönderilemedi ama hesap oluşturuldu
+          const { password: _, verificationCode: __, verificationCodeExpiry: ___, ...userWithoutSensitiveData } = user;
+          
+          return NextResponse.json(
+            { 
+              message: 'Hesap oluşturuldu ancak doğrulama e-postası gönderilemedi. Daha sonra tekrar deneyebilirsiniz.',
+              user: { ...userWithoutSensitiveData, _id: result.insertedId },
+              emailSent: false,
+              warning: 'E-posta gönderilirken bir sorun oluştu'
+            },
+            { status: 201 }
+          );
+        }
+      } catch (emailError) {
+        console.error('Email sending error during registration:', emailError);
+        
+        // Remove password and verification info from response
+        const { password: _, verificationCode: __, verificationCodeExpiry: ___, ...userWithoutSensitiveData } = user;
+        
+        return NextResponse.json(
+          { 
+            message: 'Hesap oluşturuldu ancak doğrulama e-postası gönderilemedi.',
+            user: { ...userWithoutSensitiveData, _id: result.insertedId },
+            emailSent: false,
+            warning: 'E-posta servisi geçici olarak kullanılamıyor'
+          },
+          { status: 201 }
+        );
+      }
     } else {
       return NextResponse.json(
         { message: 'Hesap oluşturulurken bir hata oluştu' },
